@@ -8,6 +8,13 @@ class Preprocessor:
         # Initialize the preprocessor with a DataFrame
         self.df = df
 
+    def standardize(self):
+        """ Performs Z-score standardization (assume all numeric columns) """
+        for key in self.df.keys():
+            mu = self.df[key].mean()
+            sigma = self.df[key].std()
+            self.df[key] = (self.df[key] - mu) / sigma
+
     def remove_index(self):
         del self.df[self.df.columns[0]]  
     

@@ -1,5 +1,4 @@
-from dataclasses import dataclass
-from typing import Any, Callable, Generator, TypeAlias
+from typing import Any, Callable
 import numpy as np
 from abc import ABC, abstractmethod
 
@@ -10,21 +9,26 @@ class Activation():
     
     def sigmoid(self, x: float) -> float:
         return 1.0 / (1.0 + np.exp(-x))
+    
+    def sigmoid_derivative(self, x: float) -> float:
+        return self.sigmoid(x) * (1 - self.sigmoid(x))
 
 # ====== Optimizer function ====== #
 class Optimizer():
-    W: np.ndarray[Any, np.dtype[float]]
-    b: float = 0
+    W: np.ndarray
+    b: np.ndarray
 
     lr: float
 
     def __init__(self):
         pass
 
-    def SGD(self, dW: np.ndarray[Any, np.dtype[float]], db: float = 0):
-        self.W = self.W - self.lr * dW
-        self.b = self.b - self.lr * db
+    def SGD(self, dW: np.ndarray, db: np.ndarray):
+        self.W -= self.lr * dW
+        self.b -= self.lr * db
     
+def binaryCrossEntropy(pred: np.ndarray, target: np.ndarray):
+    return -np.mean(target * np.log(pred) + (1 - target) * np.log(1 - pred))
 
 
 # Base classifier class
@@ -44,129 +48,154 @@ class Classifier(ABC):
         # Abstract method predict the probability of the dataset X
         pass
 
-@dataclass
-class Perceptron:
-    w: np.ndarray[Any, np.dtype[float]]
-    # bias: float
-
-    z: float = 0
-    a: float = 0
-
-@dataclass
-class Layer:
-    perceptrons: np.ndarray[Any, np.dtype[Perceptron]]
-
-@dataclass
-class Network:
-    layers: np.ndarray[Any, np.dtype[Perceptron]]
-
 class MLPClassifier(Classifier):
-    network: Network
-    activate_function: Callable[[float], float]
+    layers: list[int]
+    activation: Activation
     optimizer: Optimizer
     n_epoch: int
 
+    weights: list[np.ndarray]
+    biases: list[np.ndarray]
+
     def __init__(
         self, 
-        network: Network, 
-        activate_function: Callable[[float], float], 
+        layers: list[int], 
+        activation: Activation, 
         optimizer: Optimizer, 
         learning_rate: float, 
         n_epoch: int = 1000
     ):
-        self.network = network
-        self.activate_function = activate_function
+        self.layers = layers
+        self.activation = activation
         self.optimizer = optimizer
         self.optimizer.lr = learning_rate
         self.n_epoch = n_epoch
+
+        self.weights = [np.random.rand(self.layers[i], self.layers[i + 1]) for i in range(len(self.layers) - 1)]
+        self.biases = [np.random.rand(1, self.layers[i + 1]) for i in range(len(self.layers) - 1)]
+
         
     def forwardPass(
         self, 
-        X: np.ndarray[Any, np.ndarray[Any, np.dtype[float]]]
-    ) -> Generator[np.ndarray[Any, np.dtype[float]], None, None]:
+        X: np.ndarray
+    ) -> (list[tuple[np.ndarray, np.ndarray]]):
         """ Forward pass of MLP """
 
-        for sample in X:
-            assert isinstance(sample, np.ndarray)
-
-            prev_layer_output = sample
-            for layer in self.network.layers:
-                assert isinstance(layer, Layer)
-
-                for perceptron in layer.perceptrons:
-                    assert isinstance(perceptron, Perceptron)
-                    assert len(perceptron.w) == len(prev_layer_output), \
-                        "Previous layer's output count didn't match this layer's input count.\n\t" \
-                        f"Got input length of {len(prev_layer_output)}, expected {len(perceptron.w)}"
-                    
-                    perceptron.z = perceptron.w.dot(prev_layer_output)
-                    perceptron.a = self.activate_function(perceptron.z)
-
-                prev_layer_output = np.array([perceptron.a for perceptron in layer.perceptrons])
-            
-            yield prev_layer_output
+        activations = [(0, X)]
+        for W, b in zip(self.weights, self.biases):
+            z = activations[-1][1].dot(W) + b
+            A = self.activation.sigmoid(z)
+            activations.append((z, A))
+        return activations
 
 
-    def backwardPass(self, y):
+    def backwardPass(
+            self, 
+            X: np.ndarray[np.ndarray], 
+            y: np.ndarray[np.ndarray], 
+            activations: list[np.ndarray]
+        ) -> list[tuple[np.ndarray, np.ndarray]]:
         """ Backward pass of MLP """
-        # TODO
-        pass
 
-    def update(self):
+        sample_count = len(y)
+
+        # Output layer to last hidden layer
+        error = activations[-1][1] - y
+        # dL/dy_hat * dy_hat/dz
+        # dL/dz
+        dZ = error * self.activation.sigmoid_derivative(activations[-1][0])
+
+        # activations[-1]: Output Activation
+        # activations[-2]: Hidden Layer 2 Activations
+        # activations[-3]: Hidden Layer 1 Activations
+        # activations[-4]: Input Layer Activations
+        
+        # Calculate the gradients for this layer
+        dW = activations[-2][1].T.dot(dZ) / sample_count
+        db = dZ.sum(axis=0) / sample_count
+        # dW = dL/z^(out) = dL/dy_hat * dy_hat/dz^(out) = error * sigmoid'(z^(out))
+        gradients = [(dW, db)]
+
+        # Hidden layers, start at 2 cause output doesn't have weights and output to last hidden layer was calculated above.
+        for l in range(2, len(activations)):
+            # print(f"next_weights: {self.weights[-l + 1]}")
+            # error = next layer dZ * next layer weights
+            error = dZ.dot(self.weights[-l + 1].T)
+            # same dz calculation for current layer
+            dZ = error * self.activation.sigmoid_derivative(activations[-l][0])
+
+            # print(f"dZ: {dZ}")
+            # print(f"error: {error}")
+            # print(f"prev_activations: {activations[-l - 1]}")
+            # print(f"activations: {activations[-l]}")
+            # print(f"next_activations: {activations[-l + 1]}")
+            
+            # Calculate the gradients for this layer, same as before
+            dW = activations[-l - 1][1].T.dot(dZ) / sample_count
+            db = dZ.sum(axis=0) / sample_count
+
+            # print("activations[-l - 1][1]")
+            # print(activations[-l - 1][1])
+            # print(dZ)
+
+            # print(f"dW: {dW}")
+
+            # print(f"dW: {dW}")
+
+            # print(f"Le: {len(activations[-l])}")
+            # print(f"L: {len(activations) - l}")
+            # print("A")
+            # print(activations[-l - 1])
+            # print("dW")
+            # print(dW)
+
+            gradients.insert(0, (dW, db))
+
+        return gradients
+
+    def update(self, gradients: list[tuple[np.ndarray, np.ndarray]]):
         """ The update method to update parameters """
-        # TODO
-        pass
+        for i in range(len(self.weights)):
+            self.optimizer.W = self.weights[i]
+            self.optimizer.b = self.biases[i]
+            self.optimizer.SGD(gradients[i][0], gradients[i][1])
+            self.weights[i] = self.optimizer.W
+            self.biases[i] = self.optimizer.b
     
     def fit(
         self, 
-        X_train: np.ndarray[Any, np.ndarray[Any, np.dtype[float]]], 
-        y_train: np.ndarray[Any, np.dtype[float]]
+        X_train: np.ndarray, 
+        y_train: np.ndarray
     ):
         """ Fit method for MLP, call it to train your MLP model """
         assert len(X_train) == len(y_train)
 
-        # random_sample = np.random.choice([(X_train[i], y_train[i]) for i in range(0, len(X_train))], size=10)
-        # X_train = [x for x, y in random_sample]
-        # y_train = [y for x, y in random_sample]
+        print(f"weights: {self.weights}")
+        print()
 
-        for i in range(0, len(X_train)):
-            X = X_train[i]
-            assert isinstance(X, np.ndarray)
+        for epoch in range(self.n_epoch):
+        # for epoch in range(4):
+            sample_indices = np.random.choice(range(0, len(X_train)), size = 10)
+            X = np.array([X_train[i] for i in sample_indices])
+            y = np.array([y_train[i] for i in sample_indices])
 
-            y_hat = next(self.forwardPass([X]))
-            y = y_train[i]
-            assert isinstance(y, np.ndarray)
-            assert isinstance(y_hat, np.ndarray)
+            # print(f"X: {X}")
+            # print(f"y: {y}")
 
-            loss = y_hat - y
-            assert isinstance(loss, np.ndarray)
-            print(f"y_hat: {y_hat}, y: {y}")
+            activations = self.forwardPass(X)
+            # print(f"activations: {activations}")
+            loss = binaryCrossEntropy(activations[-1][1], y)
+            gradients = self.backwardPass(X, y, activations)
+            # print(f"before weights: {self.weights}")
+            # print(f"gradients: {gradients}")
+            self.update(gradients)
+            # print(f"after weights: {self.weights}")
 
-            dzs = loss
-            for i in reversed(range(0, len(self.network.layers))):
-                layer = self.network.layers[i]
-                assert isinstance(layer, Layer)
+            if epoch % 300 == 0:
+                print(f"Epoch {epoch}, Loss: {loss}")
+                print(f"y: {np.array(list(zip(y, activations[-1][1])))}")
+                print()
 
-                prev_dz = dzs
-                dzs = []
-                for j in range(0, len(layer.perceptrons)):
-                    perceptron = layer.perceptrons[j]
-                    assert isinstance(perceptron, Perceptron)
-
-                    input = np.array([perceptron.a for perceptron in self.network.layers[i - 1].perceptrons]) if i >= 1 \
-                        else X
-                    next_layer_W = np.array([perceptron.w for perceptron in self.network.layers[i + 1].perceptrons]) if i < len(self.network.layers) - 1 \
-                        else np.ones((len(y), len(y)))
-
-                    # TODO bias
-                    dz = sum([next_layer_W[k][j] * prev_dz[k] for k in range(0, len(next_layer_W))]) * perceptron.a * (1 - perceptron.a)
-                    dzs.append(dz)
-                    dW = dz * input
-
-                    self.optimizer.W = perceptron.w
-                    self.optimizer.SGD(dW)
-                    perceptron.w = self.optimizer.W
-                    
     def predict(self, X_test):
         """ Method for predicting class of the testing data """
         y_hat = self.predict_proba(X_test)
@@ -174,7 +203,8 @@ class MLPClassifier(Classifier):
     
     def predict_proba(self, X_test):
         """ Method for predicting the probability of the testing data """
-        return self.forwardPass(X_test)
+        # Gets the last output, get the A list from the z,A tuple
+        return self.forwardPass(X_test)[-1][1]
 
 
     

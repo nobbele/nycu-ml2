@@ -1,14 +1,12 @@
 import numpy as np
 import pandas as pd
 from preprocessor import Preprocessor
-from model import Layer, MLPClassifier, Activation, Network, Optimizer, Perceptron
+from model import MLPClassifier, Activation, Optimizer
 from sklearn.metrics import accuracy_score, f1_score, precision_score, recall_score, matthews_corrcoef, roc_auc_score
 import os
 
 
-def dataPreprocessing():
-    """ TODO, use your own dataPreprocess function here. """
-     
+def dataPreprocessing():     
     # root_path = r"E:\2024_ml\assignment\hw2\proj2_data" # change the root path 
     root_path = r"/home/nobbele/Projects/ML/Project2/pycode/proj2_data/"
     
@@ -27,6 +25,7 @@ def dataPreprocessing():
         pp.remove_index()
         pp.fillna()
         pp.yesno_to_int()
+        pp.standardize()
         return pp.df.to_numpy()
     
     def preprocess_y(df):
@@ -46,18 +45,34 @@ def dataPreprocessing():
 def main():
     train_X, train_y, test_X, test_y = dataPreprocessing() # train, test data should not contain index
 
-    input_layer_N = 77
-    hidden_layer1_N = 50
-    hidden_layer2_N = 25
-    output_layer_N = 1
+    # train_X = np.array([
+    #     np.array([0, 0, 0, 0]),
+    #     np.array([1, 0, 0, 0]),
+    #     np.array([0, 1, 0, 0]),
+    #     np.array([0, 1, 1, 0]),
+    #     np.array([1, 0, 0, 1]),
+    # ])
+    # train_y = np.array([
+    #     np.array([0]),
+    #     np.array([0]),
+    #     np.array([0]),
+    #     np.array([1]),
+    #     np.array([1]),
+    # ])
+
+    # test_X = np.array([
+    #     np.array([0, 0, 1, 1]),
+    #     np.array([1, 0, 0, 1]),
+    # ])
+    # test_y = np.array([
+    #     np.array([0]),
+    #     np.array([1]),
+    # ])
 
     model = MLPClassifier(
-        Network(np.array([
-            Layer([Perceptron(np.random.randn(input_layer_N)) for _ in range(0, hidden_layer1_N)]),
-            Layer([Perceptron(np.random.randn(hidden_layer1_N)) for _ in range(0, hidden_layer2_N)]),
-            Layer([Perceptron(np.random.randn(hidden_layer2_N)) for _ in range(0, output_layer_N)]),
-        ])), 
-        Activation().sigmoid, 
+        [77, 50, 25, 1], 
+        # [4, 2, 1], 
+        Activation(), 
         Optimizer(), 
         0.01
     )
@@ -76,7 +91,7 @@ def main():
 
 
 if __name__ == "__main__":
-    np.random.seed(0)
+    np.random.seed(5)
     main()
     
 
