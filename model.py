@@ -7,10 +7,10 @@ class Activation():
     def __init__(self):
         pass
     
-    def sigmoid(self, x: float) -> float:
+    def sigmoid(self, x: np.ndarray) -> np.ndarray:
         return 1.0 / (1.0 + np.exp(-x))
     
-    def sigmoid_derivative(self, x: float) -> float:
+    def sigmoid_derivative(self, x: np.ndarray) -> np.ndarray:
         return self.sigmoid(x) * (1 - self.sigmoid(x))
 
 # ====== Optimizer function ====== #
@@ -27,8 +27,14 @@ class Optimizer():
         self.W -= self.lr * dW
         self.b -= self.lr * db
     
-def binaryCrossEntropy(pred: np.ndarray, target: np.ndarray):
-    return -np.mean(target * np.log(pred) + (1 - target) * np.log(1 - pred))
+def meanSquareError(pred: np.ndarray, target: np.ndarray):
+    return np.sum((pred - target) ** 2) / 2
+
+def meanSquareErrorDerivative(pred: np.ndarray, target: np.ndarray):
+    return pred - target
+
+# def binaryCrossEntropy(pred: np.ndarray, target: np.ndarray):
+#     return -np.mean(target * np.log(pred) + (1 - target) * np.log(1 - pred))
 
 
 # Base classifier class
@@ -54,6 +60,9 @@ class MLPClassifier(Classifier):
     optimizer: Optimizer
     n_epoch: int
 
+    # [ <Node 0 Weights>
+    #   <Node 1 Weights>
+    #   <Node 2 Weights>, ... ]
     weights: list[np.ndarray]
     biases: list[np.ndarray]
 
@@ -71,8 +80,8 @@ class MLPClassifier(Classifier):
         self.optimizer.lr = learning_rate
         self.n_epoch = n_epoch
 
-        self.weights = [np.random.rand(self.layers[i], self.layers[i + 1]) for i in range(len(self.layers) - 1)]
-        self.biases = [np.random.rand(1, self.layers[i + 1]) for i in range(len(self.layers) - 1)]
+        self.weights = [np.random.rand(self.layers[i], self.layers[i - 1]) / 10 for i in range(1, len(self.layers))]
+        self.biases = [np.zeros((1, self.layers[i + 1])) for i in range(len(self.layers) - 1)]
 
         
     def forwardPass(
@@ -81,11 +90,34 @@ class MLPClassifier(Classifier):
     ) -> (list[tuple[np.ndarray, np.ndarray]]):
         """ Forward pass of MLP """
 
-        activations = [(0, X)]
+        # 10 rows    of samples
+        # 77  columns of features
+        # assert X.shape == (10, 77)
+
+        sample_count = X.shape[0]
+
+        activations = [X]
         for W, b in zip(self.weights, self.biases):
-            z = activations[-1][1].dot(W) + b
+            # [ <Sample 0 Activations>
+            #   <Sample 1 Activations>
+            #   <Sample 2 Activations>, ... ]
+            I = activations[-1]
+
+            # [ <Z_0, Z_1, Z_2, ...> Sample 0 Zs for Node 0, 1, 2, ...
+            #   <Z_0, Z_1, Z_2, ...> Sample 1 Zs for Node 0, 1, 2, ...
+            #   <Z_0, Z_1, Z_2, ...>, ... ]
+            z = I @ W.T + b
+            assert z.shape == (sample_count, len(W))
+
+            # print(f"z = {z}")
+
+            # [ <A_0, A_1, A_2, ...> Sample 0 Activations for Node 0, 1, 2, ...
+            #   <A_0, A_1, A_2, ...> Sample 1 Activations for Node 0, 1, 2, ...
+            #   <A_0, A_1, A_2, ...>, ... ]
             A = self.activation.sigmoid(z)
-            activations.append((z, A))
+            assert A.shape == (sample_count, len(W))
+
+            activations.append(A)
         return activations
 
 
@@ -98,56 +130,50 @@ class MLPClassifier(Classifier):
         """ Backward pass of MLP """
 
         sample_count = len(y)
+        y_hat = activations[-1]
 
         # Output layer to last hidden layer
-        error = activations[-1][1] - y
-        # dL/dy_hat * dy_hat/dz
-        # dL/dz
-        dZ = error * self.activation.sigmoid_derivative(activations[-1][0])
+        error = meanSquareErrorDerivative(y_hat, y)
 
-        # activations[-1]: Output Activation
+        dZ = error * y_hat * (1 - y_hat)
+
+        # for (ny, ny_hat, ne, ndz) in zip(y, y_hat, error, dZ):
+        #     print(f"y: {ny} - y_hat: {ny_hat} = error: {ne}, dZ = {ndz}")
+
+        # print()
+
+        # activations[-1]: Output Activation (y_hat)
         # activations[-2]: Hidden Layer 2 Activations
         # activations[-3]: Hidden Layer 1 Activations
         # activations[-4]: Input Layer Activations
         
         # Calculate the gradients for this layer
-        dW = activations[-2][1].T.dot(dZ) / sample_count
+        dW = ((activations[-2].T @ dZ) / sample_count).T
+
+        # print(f"activations[-2]: {activations[-2]}")
+        # print(f"dW: {dW}")
+
+        # print(f"dW: {dW}")
+
         db = dZ.sum(axis=0) / sample_count
-        # dW = dL/z^(out) = dL/dy_hat * dy_hat/dz^(out) = error * sigmoid'(z^(out))
+        # db = 0
+
         gradients = [(dW, db)]
 
-        # Hidden layers, start at 2 cause output doesn't have weights and output to last hidden layer was calculated above.
-        for l in range(2, len(activations)):
-            # print(f"next_weights: {self.weights[-l + 1]}")
-            # error = next layer dZ * next layer weights
-            error = dZ.dot(self.weights[-l + 1].T)
+        # Hidden layers, start at 1 cause input doesn't have weights
+        for l in reversed(range(0, len(activations) - 2)):
+            error = dZ @ self.weights[l + 1]
+
             # same dz calculation for current layer
-            dZ = error * self.activation.sigmoid_derivative(activations[-l][0])
+            dZ = error * activations[l + 1] * (1 - activations[l + 1])
 
-            # print(f"dZ: {dZ}")
-            # print(f"error: {error}")
-            # print(f"prev_activations: {activations[-l - 1]}")
-            # print(f"activations: {activations[-l]}")
-            # print(f"next_activations: {activations[-l + 1]}")
-            
+            # for (ny, ny_hat, ne, ndz) in zip(y, y_hat, error, dZ):
+            #     print(f"y: {ny} - y_hat: {ny_hat} = error: {ne}, dZ = {ndz}")
+
             # Calculate the gradients for this layer, same as before
-            dW = activations[-l - 1][1].T.dot(dZ) / sample_count
+            # activations[l] is the previous layer's activation (since weight[0] is the weights between layer 0 and 1).
+            dW = (activations[l].T @ dZ).T / sample_count
             db = dZ.sum(axis=0) / sample_count
-
-            # print("activations[-l - 1][1]")
-            # print(activations[-l - 1][1])
-            # print(dZ)
-
-            # print(f"dW: {dW}")
-
-            # print(f"dW: {dW}")
-
-            # print(f"Le: {len(activations[-l])}")
-            # print(f"L: {len(activations) - l}")
-            # print("A")
-            # print(activations[-l - 1])
-            # print("dW")
-            # print(dW)
 
             gradients.insert(0, (dW, db))
 
@@ -170,12 +196,13 @@ class MLPClassifier(Classifier):
         """ Fit method for MLP, call it to train your MLP model """
         assert len(X_train) == len(y_train)
 
-        print(f"weights: {self.weights}")
+        # print(f"weights: {self.weights}")
         print()
 
         for epoch in range(self.n_epoch):
         # for epoch in range(4):
             sample_indices = np.random.choice(range(0, len(X_train)), size = 10)
+            # sample_indices = [i for i in range(10)]
             X = np.array([X_train[i] for i in sample_indices])
             y = np.array([y_train[i] for i in sample_indices])
 
@@ -184,7 +211,7 @@ class MLPClassifier(Classifier):
 
             activations = self.forwardPass(X)
             # print(f"activations: {activations}")
-            loss = binaryCrossEntropy(activations[-1][1], y)
+            loss = meanSquareError(activations[-1], y)
             gradients = self.backwardPass(X, y, activations)
             # print(f"before weights: {self.weights}")
             # print(f"gradients: {gradients}")
@@ -193,7 +220,9 @@ class MLPClassifier(Classifier):
 
             if epoch % 300 == 0:
                 print(f"Epoch {epoch}, Loss: {loss}")
-                print(f"y: {np.array(list(zip(y, activations[-1][1])))}")
+                # print(f"activations: {activations}")
+                for (ny, ny_hat) in zip(y, activations[-1]):
+                    print(f"y: {ny} - y_hat: {ny_hat}")
                 print()
 
     def predict(self, X_test):
@@ -204,7 +233,7 @@ class MLPClassifier(Classifier):
     def predict_proba(self, X_test):
         """ Method for predicting the probability of the testing data """
         # Gets the last output, get the A list from the z,A tuple
-        return self.forwardPass(X_test)[-1][1]
+        return self.forwardPass(X_test)[-1]
 
 
     
