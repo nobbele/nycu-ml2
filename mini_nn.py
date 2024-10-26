@@ -106,8 +106,8 @@ def backwardPass(Xs: np.ndarray, ys: float):
     #     print(f"gradient: {gradient}")
     # print()
 
-    alpha = 0.9
-    beta = 0.1
+    alpha = 10
+    beta = 0
     # Update weights and biases
     weights_out += alpha * -o_dmse_dw + beta * prev_o_dmse_dw
     bias_out += alpha * -o_dmse_db + beta * prev_o_dmse_db
