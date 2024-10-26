@@ -33,15 +33,27 @@ bias_out = 0
 def sigmoid(z: np.ndarray) -> float:
     return 1 / (1 + np.exp(-z))
 
+def sigmoid_derivative(x: np.ndarray) -> float:
+    return sigmoid(x) * (1 - sigmoid(x))
+
+leaky_relu_alpha = 0.01
+def leaky_relu(z: np.ndarray) -> float:
+    return np.where(z > 0, z, leaky_relu_alpha * z)
+
+def leaky_relu_derivative(x: np.ndarray) -> float:
+    return np.where(x > 0, 1, leaky_relu_alpha)
+
 def squareError(y_hat: float, y: float) -> float:
     return (y_hat - y) ** 2
 
 def forwardPass(X: np.ndarray) -> float:
     z_h = X @ weights_h.T + biases_h
-    a_h = sigmoid(z_h)
+    # a_h = sigmoid(z_h)
+    a_h = leaky_relu(z_h)
 
     z_o = a_h @ weights_out.T + bias_out
-    a_o = sigmoid(z_o)
+    # a_o = sigmoid(z_o)
+    a_o = leaky_relu(z_o)
 
     return a_o
 
@@ -68,17 +80,20 @@ def backwardPass(Xs: np.ndarray, ys: float):
     for (X, y) in zip(Xs, ys):
         y = y[0]
         z_h = X @ weights_h.T + biases_h
-        a_h = sigmoid(z_h)
+        # a_h = sigmoid(z_h)
+        a_h = leaky_relu(z_h)
 
         z_o = a_h @ weights_out.T + bias_out
-        a_o = sigmoid(z_o)
+        # a_o = sigmoid(z_o)
+        a_o = leaky_relu(z_o)
 
         # print(f"X: {X}")
         # print(f"a_h: {a_h}")
         # print(f"y_hat: {a_o}, y: {y}")
 
         o_dmse_dy_hat = (a_o - y) * 2
-        o_dy_hat_dz = sigmoid(z_o) * (1 - sigmoid(z_o))
+        # o_dy_hat_dz = sigmoid_derivative(z_o)
+        o_dy_hat_dz = leaky_relu_derivative(z_o)
         o_dz_dw = a_h
 
         o_dmse_dz = o_dmse_dy_hat * o_dy_hat_dz
@@ -87,7 +102,8 @@ def backwardPass(Xs: np.ndarray, ys: float):
 
         for i in range(len(weights_h)):
             h_dzo_da = weights_out[i]
-            h_da_dz = sigmoid(z_h[i]) * (1 - sigmoid(z_h[i]))
+            # h_da_dz = sigmoid_derivative(z_h[i])
+            h_da_dz = leaky_relu_derivative(z_h[i])
             h_dz_dw = X
 
             h_dzo_dz = h_dzo_da * h_da_dz
@@ -106,7 +122,7 @@ def backwardPass(Xs: np.ndarray, ys: float):
     #     print(f"gradient: {gradient}")
     # print()
 
-    alpha = 10
+    alpha = 0.01
     beta = 0
     # Update weights and biases
     weights_out += alpha * -o_dmse_dw + beta * prev_o_dmse_dw
