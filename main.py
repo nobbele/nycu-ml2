@@ -69,9 +69,30 @@ def main():
     #     np.array([1]),
     # ])
 
+    train_X = np.array([
+        np.array([0, 0]),
+        np.array([0, 1]),
+        np.array([1, 0]),
+        np.array([1, 1]),
+    ])
+    train_y = np.array([
+        np.array([0]),
+        np.array([0]),
+        np.array([0]),
+        np.array([1]),
+    ])
+    # test_X = np.array([
+    #     np.array([400]),
+    #     np.array([600]),
+    # ])
+    # test_y = np.array([
+    #     np.array([20_000]),
+    #     np.array([30_000]),
+    # ])
+
     model = MLPClassifier(
-        [77, 50, 25, 1], 
-        # [4, 0, 1, 1], 
+        # [77, 50, 50, 1], 
+        [2, 0, 4, 1], 
         0.01
     )
     model.fit(train_X, train_y)
@@ -91,17 +112,17 @@ def main():
     #     train_y[3],
     #     train_y[5],
     # ]))
-    pred = model.predict(test_X)
+    # pred = model.predict(test_X)
 
-    acc = accuracy_score(pred, test_y)
-    f1 = f1_score(pred, test_y, zero_division=0)
-    mcc = matthews_corrcoef(pred, test_y)
+    # acc = accuracy_score(pred, test_y)
+    # f1 = f1_score(pred, test_y, zero_division=0)
+    # mcc = matthews_corrcoef(pred, test_y)
 
-    print(f'Acc: {acc:.5f}')
-    print(f'F1 score: {f1:.5f}')
-    print(f'MCC: {mcc:.5f}')
-    scoring = 0.3 * acc + 0.35 * f1 + 0.35 * mcc
-    print(f'Scoring: {scoring:.5f}')
+    # print(f'Acc: {acc:.5f}')
+    # print(f'F1 score: {f1:.5f}')
+    # print(f'MCC: {mcc:.5f}')
+    # scoring = 0.3 * acc + 0.35 * f1 + 0.35 * mcc
+    # print(f'Scoring: {scoring:.5f}')
 
 
 if __name__ == "__main__":

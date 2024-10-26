@@ -6,7 +6,7 @@ def sigmoid(x: np.ndarray) -> np.ndarray:
 
 def meanSquareError(pred: np.ndarray, target: np.ndarray):
     n = len(pred)
-    return np.sum((pred - target) ** 2) / (2 * n)
+    return np.mean((pred - target) ** 2) / 2
 
 # Base classifier class
 class Classifier(ABC):
@@ -30,9 +30,11 @@ class MLPClassifier(Classifier):
     n_epoch: int
 
     weights_h1: np.ndarray
+    biases_h1: np.ndarray
     prev_dW_h1: np.ndarray
     # weights_h2: np.ndarray
     weights_out: np.ndarray
+    biases_out: np.ndarray
     prev_dW_out: np.ndarray
 
     lr: float
@@ -49,9 +51,11 @@ class MLPClassifier(Classifier):
 
         # self.weights_h1 = np.random.rand(self.layers[0], self.layers[1])
         self.weights_h1 = np.random.rand(self.layers[0], self.layers[2])
+        self.biases_h1 = np.random.rand(self.layers[2])
         self.prev_dW_h1 = np.zeros((self.layers[0],  self.layers[2]))
         # self.weights_h2 = np.random.rand(self.layers[1], self.layers[2])
         self.weights_out = np.random.rand(self.layers[2], self.layers[3])
+        self.biases_out = np.random.rand(self.layers[3])
         self.prev_dW_out = np.zeros((self.layers[2],  self.layers[3]))
 
         
@@ -62,11 +66,14 @@ class MLPClassifier(Classifier):
         """ Forward pass of MLP """
 
         predictions = np.array([])
+
         for x in X:
             A_h1 = sigmoid(x @ self.weights_h1)
             # A_h2 = sigmoid(A_h2 @ self.weights_h2)
             y_hat = sigmoid(A_h1 @ self.weights_out)
-            predictions = np.append(predictions, y_hat)
+            predictions = np.append(predictions, np.array(y_hat))
+
+        predictions = predictions.reshape(predictions.shape[0],-1)
 
         return predictions
 
@@ -114,19 +121,21 @@ class MLPClassifier(Classifier):
 
         sample_count = len(gradients)
 
-        alpha = 1
-        momentum = 1
+        learning_rate = 1.0
+        momentum = 0.3
 
         for (gradients_h1, gradients_out) in gradients:
             for node_i in range(len(gradients_h1)):
-                for weight_i in range(len(gradients_h1)):
-                    delta = alpha * gradients_h1[node_i][weight_i] / sample_count
-                    self.weights_h1[weight_i][node_i] -= delta
+                for weight_i in range(len(gradients_h1[node_i])):
+                    delta = gradients_h1[node_i][weight_i] / sample_count
+                    delta = momentum * self.prev_dW_h1[weight_i][node_i] + learning_rate * -delta
+                    self.weights_h1[weight_i][node_i] += delta
                     self.prev_dW_h1[weight_i][node_i] = delta
 
             for weight_i in range(len(self.weights_out)):
-                delta = alpha * gradients_out[weight_i]  / sample_count
-                self.weights_out[weight_i] -= delta
+                delta = gradients_out[weight_i]  / sample_count
+                delta = momentum * self.prev_dW_out[weight_i] + learning_rate * -delta
+                self.weights_out[weight_i] += delta
                 self.prev_dW_out[weight_i] = delta
 
     def fit(
@@ -151,6 +160,7 @@ class MLPClassifier(Classifier):
             if epoch % 30 == 0:
                 y_hats = self.forwardPass(X_train)
                 loss = meanSquareError(y_hats, y_train)
+                print(f"y_hat {y_hats}, y: {y_train}")
                 print(f"Epoch {epoch}, Loss: {loss}")
 
         sample_indices = np.random.choice(range(0, len(X_train)), size = 10)
