@@ -27,6 +27,11 @@ class Preprocessor:
         self.df["F16"] = (self.df["F16"] - 185) / 110
         self.df["F17"] = (self.df["F17"] - 2.2) / 2.5
 
+    def feature_selection(self):
+        del self.df["F7"]
+        del self.df["F11"]
+        del self.df["F17"]
+
     def remove_index(self):
         del self.df[self.df.columns[0]]  
     

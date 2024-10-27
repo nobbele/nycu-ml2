@@ -26,6 +26,7 @@ def dataPreprocessing():
         pp.fillna()
         pp.yesno_to_int()
         pp.standardize()
+        pp.feature_selection()
         return pp.df.to_numpy()
     
     def preprocess_y(df):
@@ -56,7 +57,7 @@ def main():
     # Result: 0.69210
 
     model = MLPClassifier(
-        [77, 50, 50, 1], 
+        [74, 55, 55, 1], 
         # IdentityActivation(),
         SigmoidActivation(),
         # LeakyReLUActivation(0.2),
