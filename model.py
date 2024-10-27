@@ -40,16 +40,14 @@ class LeakyReLUActivation(Activation):
 # ====== Optimizer function ====== #
 class Optimizer(ABC):
     out_w: np.ndarray
-    h2_w: np.ndarray
-    h1_w: np.ndarray
+    hidden_weights: list[np.ndarray]
 
-    def set_weights_arrays(self, h1_w, h2_w, out_w):
-        self.h1_w = h1_w
-        self.h2_w = h2_w
+    def set_weights_arrays(self, hidden_weights, out_w):
+        self.hidden_weights = hidden_weights
         self.out_w = out_w
 
     @abstractmethod
-    def update(self, h1_dW, h2_dW, out_dW):
+    def update(self, hidden_deltas, out_dW):
         pass
 
 class SGDOptimizer(Optimizer):
@@ -59,17 +57,16 @@ class SGDOptimizer(Optimizer):
         super(Optimizer, self).__init__()
         self.lr = lr
 
-    def update(self, h1_dW, h2_dW, out_dW):
-        self.h1_w += h1_dW * self.lr
-        self.h2_w += h2_dW * self.lr
+    def update(self, hidden_deltas, out_dW):
+        for i in range(len(hidden_deltas)):
+            self.hidden_weights[i] += hidden_deltas[i] * self.lr
         self.out_w += out_dW * self.lr
 
 class MomentumOptimizer(Optimizer):
     lr: float
     beta: float
 
-    h1_v: np.ndarray = 0
-    h2_v: np.ndarray = 0
+    hidden_vs: list[np.ndarray]
     out_v: np.ndarray = 0
 
     def __init__(self, lr: float, beta: float):
@@ -77,33 +74,38 @@ class MomentumOptimizer(Optimizer):
         self.lr = lr
         self.beta = beta
 
-    def update(self, h1_dW, h2_dW, out_dW):
-        self.h1_v = self.beta * self.h1_v + (1 - self.beta) * h1_dW
-        self.h2_v = self.beta * self.h2_v + (1 - self.beta) * h2_dW
-        self.out_v = self.beta * self.out_v + (1 - self.beta) * out_dW
+    def set_weights_arrays(self, hidden_weights, out_w):
+        self.hidden_vs = [0 for _ in range(len(hidden_weights))]
+        Optimizer.set_weights_arrays(self, hidden_weights, out_w)
 
-        self.h1_w += self.h1_v * self.lr
-        self.h2_w += self.h2_v * self.lr
+    def update(self, hidden_deltas, out_dW):
+        for i in range(len(hidden_deltas)):
+            self.hidden_vs = self.beta * self.hidden_vs[i] + (1 - self.beta) * hidden_deltas[i]
+            self.hidden_weights[i] += self.hidden_vs[i] * self.lr
+
+        self.out_v = self.beta * self.out_v + (1 - self.beta) * out_dW
         self.out_w += self.out_v * self.lr
 
 class AdaGradOptimizer(Optimizer):
     lr: float
 
-    G_h1: np.ndarray = 0
-    G_h2: np.ndarray = 0
+    Gs_hidden: list[np.ndarray]
     G_out: np.ndarray = 0
 
     def __init__(self, lr: float):
         super(Optimizer, self).__init__()
         self.lr = lr
 
-    def update(self, h1_dW, h2_dW, out_dW):
-        self.G_h1 += h1_dW ** 2
-        self.G_h2 += h2_dW ** 2
-        self.G_out += out_dW ** 2
+    def set_weights_arrays(self, hidden_weights, out_w):
+        self.Gs_hidden = [0 for i in range(len(hidden_weights))]
+        Optimizer.set_weights_arrays(self, hidden_weights, out_w)
 
-        self.h1_w += h1_dW * self.lr / (0.00000001 + np.sqrt(self.G_h1))
-        self.h2_w += h2_dW * self.lr / (0.00000001 + np.sqrt(self.G_h2))
+    def update(self, hidden_deltas, out_dW):
+        for i in range(len(hidden_deltas)):
+            self.Gs_hidden[i] += hidden_deltas[i] ** 2
+            self.hidden_weights[i] += hidden_deltas[i] * self.lr / (0.00000001 + np.sqrt(self.Gs_hidden[i]))
+
+        self.G_out += out_dW ** 2
         self.out_w += out_dW * self.lr / (0.00000001 + np.sqrt(self.G_out))
 
 # Base classifier class
@@ -136,24 +138,29 @@ class MLPClassifier(Classifier):
         self.optimizer = optimizer
         self.n_epoch = n_epoch
 
-        self.weights_h1 = np.random.rand(self.layers[0], self.layers[1]) * 0.1
-        self.weights_h2 = np.random.rand(self.layers[1], self.layers[2]) * 0.1
-        self.weights_out = np.random.rand(self.layers[2], self.layers[3]) * 0.1
+        self.hidden_weights = []
+        for i in range(len(self.layers) - 2):
+            self.hidden_weights.append(np.random.rand(self.layers[i], self.layers[i + 1]) * 0.1)
 
-        self.optimizer.set_weights_arrays(self.weights_h1, self.weights_h2, self.weights_out)
+        self.weights_out = np.random.rand(self.layers[-2], self.layers[-1]) * 0.1
+
+        self.optimizer.set_weights_arrays(self.hidden_weights, self.weights_out)
         
     def forwardPass(self, X: np.ndarray):
         """ Forward pass of MLP """
 
         self.X = X
 
-        self.z_h1 = self.X @ self.weights_h1
-        self.a_h1 = self.activation.apply(self.z_h1)
+        self.hidden_zs = []
+        self.activations = [X]
+        for i in range(len(self.layers) - 2):
+            z = self.activations[-1] @ self.hidden_weights[i]
+            a = self.activation.apply(z)
 
-        self.z_h2 = self.a_h1 @ self.weights_h2
-        self.a_h2 = self.activation.apply(self.z_h2)
+            self.hidden_zs.append(z)
+            self.activations.append(a)
 
-        self.z_out = self.a_h2 @ self.weights_out
+        self.z_out = self.activations[-1] @ self.weights_out
         self.y_hat = self.activation.apply(self.z_out)
 
     def backwardPass(self, y: np.ndarray):
@@ -161,21 +168,24 @@ class MLPClassifier(Classifier):
 
         out_error = y - self.y_hat
         out_dz = out_error * self.activation.apply_derivative(self.z_out)
+        self.out_dw = self.activations[-1].T @ out_dz
 
-        h2_error = out_dz.dot(self.weights_out.T)
-        h2_dz = h2_error * self.activation.apply_derivative(self.z_h2)
+        self.hidden_dws = []
+        prev_dz = out_dz
+        prev_weights = self.weights_out
+        for i in reversed(range(len(self.layers) - 2)):
+            error = prev_dz.dot(prev_weights.T)
+            dz = error * self.activation.apply_derivative(self.hidden_zs[i])
+            dw = self.activations[i].T @ dz
 
-        h1_error = h2_dz.dot(self.weights_h2.T)
-        h1_dz = h1_error * self.activation.apply_derivative(self.z_h1)
-
-        self.out_dw = self.a_h2.T @ out_dz
-        self.h2_dw = self.a_h1.T @ h2_dz
-        self.h1_dw = self.X.T @ h1_dz
+            self.hidden_dws.insert(0, dw)
+            prev_dz = dz
+            prev_weights = self.hidden_weights[i]
 
     def update(self):
         """ The update method to update parameters """
 
-        self.optimizer.update(self.h1_dw, self.h2_dw, self.out_dw)
+        self.optimizer.update(self.hidden_dws, self.out_dw)
     
     def fit(self, X_train: np.ndarray, y_train: np.ndarray):
         """ Fit method for MLP, call it to train your MLP model """
