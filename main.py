@@ -1,7 +1,7 @@
 import numpy as np
 import pandas as pd
 from preprocessor import Preprocessor
-from model import MLPClassifier
+from model import LeakyReLUActivation, MLPClassifier, SGDOptimizer, SigmoidActivation
 from sklearn.metrics import accuracy_score, f1_score, precision_score, recall_score, matthews_corrcoef, roc_auc_score
 import os
 
@@ -45,88 +45,32 @@ def dataPreprocessing():
 def main():
     train_X, train_y, test_X, test_y = dataPreprocessing() # train, test data should not contain index
 
-    # train_X = np.array([
-    #     np.array([0, 0, 0, 0]),
-    #     np.array([1, 0, 0, 0]),
-    #     np.array([0, 1, 0, 0]),
-    #     np.array([0, 1, 1, 0]),
-    #     np.array([1, 0, 0, 1]),
-    # ])
-    # train_y = np.array([
-    #     np.array([0]),
-    #     np.array([0]),
-    #     np.array([0]),
-    #     np.array([1]),
-    #     np.array([1]),
-    # ])
-
-    # test_X = np.array([
-    #     np.array([0, 0, 1, 1]),
-    #     np.array([1, 0, 0, 1]),
-    # ])
-    # test_y = np.array([
-    #     np.array([0]),
-    #     np.array([1]),
-    # ])
-
-    train_X = np.array([
-        np.array([0, 0]),
-        np.array([0, 1]),
-        np.array([1, 0]),
-        np.array([1, 1]),
-    ])
-    train_y = np.array([
-        np.array([0]),
-        np.array([0]),
-        np.array([0]),
-        np.array([1]),
-    ])
-    # test_X = np.array([
-    #     np.array([400]),
-    #     np.array([600]),
-    # ])
-    # test_y = np.array([
-    #     np.array([20_000]),
-    #     np.array([30_000]),
-    # ])
+        # [77, 50, 50, 1], 
+        # LeakyReLUActivation(0.1),
+        # SGDOptimizer(lr = 0.0007)
+        # Result: 0.60569
 
     model = MLPClassifier(
-        # [77, 50, 50, 1], 
-        [2, 0, 4, 1], 
-        0.01
+        [77, 50, 50, 1], 
+        LeakyReLUActivation(0.1),
+        SGDOptimizer(lr = 0.01)
     )
     model.fit(train_X, train_y)
-    # print(model.forwardPass([
-    #     train_X[0],
-    # ]))
-    # model.fit(np.array([
-    #     train_X[10],
-    #     train_X[6],
-    #     train_X[8],
-    #     train_X[3],
-    #     train_X[5],
-    # ]), np.array([
-    #     train_y[10],
-    #     train_y[6],
-    #     train_y[8],
-    #     train_y[3],
-    #     train_y[5],
-    # ]))
-    # pred = model.predict(test_X)
+    pred = model.predict(test_X)
 
-    # acc = accuracy_score(pred, test_y)
-    # f1 = f1_score(pred, test_y, zero_division=0)
-    # mcc = matthews_corrcoef(pred, test_y)
+    acc = accuracy_score(pred, test_y)
+    f1 = f1_score(pred, test_y, zero_division=0)
+    mcc = matthews_corrcoef(pred, test_y)
 
-    # print(f'Acc: {acc:.5f}')
-    # print(f'F1 score: {f1:.5f}')
-    # print(f'MCC: {mcc:.5f}')
-    # scoring = 0.3 * acc + 0.35 * f1 + 0.35 * mcc
-    # print(f'Scoring: {scoring:.5f}')
+    print(f'Acc: {acc:.5f}')
+    print(f'F1 score: {f1:.5f}')
+    print(f'MCC: {mcc:.5f}')
+    scoring = 0.3 * acc + 0.35 * f1 + 0.35 * mcc
+    print(f'Scoring: {scoring:.5f}')
 
 
 if __name__ == "__main__":
-    np.random.seed(5)
+    np.random.seed(0)
     main()
     
 

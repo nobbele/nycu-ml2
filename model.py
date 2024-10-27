@@ -1,12 +1,61 @@
 import numpy as np
 from abc import ABC, abstractmethod
 
-def sigmoid(x: np.ndarray) -> np.ndarray:
-    return 1.0 / (1.0 + np.exp(-x))
+# ====== Activation funtion ====== #
+class Activation(ABC):
+    @abstractmethod
+    def apply(self, x: np.ndarray) -> np.ndarray:
+        pass
+    
+    @abstractmethod
+    def apply_derivative(self, x: np.ndarray) -> np.ndarray:
+        pass
+    
+class SigmoidActivation(Activation):
+    def apply(self, x: np.ndarray) -> np.ndarray:
+        return 1 / (1 + np.exp(-x))
+    
+    def apply_derivative(self, x: np.ndarray) -> np.ndarray:
+        return self.apply(x) * (1 - self.apply(x))
+    
+class LeakyReLUActivation(Activation):
+    alpha: float
 
-def meanSquareError(pred: np.ndarray, target: np.ndarray):
-    n = len(pred)
-    return np.mean((pred - target) ** 2) / 2
+    def __init__(self, alpha: float):
+        self.alpha = alpha
+
+    def apply(self, x: np.ndarray) -> np.ndarray:
+        return np.where(x > 0, x, self.alpha * x)
+    
+    def apply_derivative(self, x: np.ndarray) -> np.ndarray:
+        return np.where(x > 0, 1, self.alpha)
+
+# ====== Optimizer function ====== #
+class Optimizer(ABC):
+    out_w: np.ndarray
+    h2_w: np.ndarray
+    h1_w: np.ndarray
+
+    def set_weights_arrays(self, h1_w, h2_w, out_w):
+        self.h1_w = h1_w
+        self.h2_w = h2_w
+        self.out_w = out_w
+
+    @abstractmethod
+    def update(self, h1_dW, h2_dW, out_dW):
+        pass
+
+class SGDOptimizer(Optimizer):
+    lr: float
+
+    def __init__(self, lr: float):
+        super(Optimizer, self).__init__()
+        self.lr = lr
+
+    def update(self, h1_dW, h2_dW, out_dW):
+        self.h1_w += h1_dW * self.lr
+        self.h2_w += h2_dW * self.lr
+        self.out_w += out_dW * self.lr
 
 # Base classifier class
 class Classifier(ABC):
@@ -25,155 +74,79 @@ class Classifier(ABC):
         # Abstract method predict the probability of the dataset X
         pass
 
+
 class MLPClassifier(Classifier):
-    layers: list[int]
+    activation: Activation
+    optimizer: Optimizer
+    learning_rate: float
     n_epoch: int
 
-    weights_h1: np.ndarray
-    biases_h1: np.ndarray
-    prev_dW_h1: np.ndarray
-    # weights_h2: np.ndarray
-    weights_out: np.ndarray
-    biases_out: np.ndarray
-    prev_dW_out: np.ndarray
+    def __init__(self, layers, activation, optimizer, n_epoch = 10_000):
+        """ TODO, Initialize your own MLP class """
 
-    lr: float
-
-    def __init__(
-        self, 
-        layers: list[int], 
-        learning_rate: float, 
-        n_epoch: int = 100
-    ):
         self.layers = layers
-        self.lr = learning_rate
+        self.activation = activation
+        self.optimizer = optimizer
         self.n_epoch = n_epoch
 
-        # self.weights_h1 = np.random.rand(self.layers[0], self.layers[1])
-        self.weights_h1 = np.random.rand(self.layers[0], self.layers[2])
-        self.biases_h1 = np.random.rand(self.layers[2])
-        self.prev_dW_h1 = np.zeros((self.layers[0],  self.layers[2]))
-        # self.weights_h2 = np.random.rand(self.layers[1], self.layers[2])
-        self.weights_out = np.random.rand(self.layers[2], self.layers[3])
-        self.biases_out = np.random.rand(self.layers[3])
-        self.prev_dW_out = np.zeros((self.layers[2],  self.layers[3]))
+        self.weights_h1 = np.random.rand(self.layers[0], self.layers[1]) * 0.1
+        self.weights_h2 = np.random.rand(self.layers[1], self.layers[2]) * 0.1
+        self.weights_out = np.random.rand(self.layers[2], self.layers[3]) * 0.1
 
+        self.optimizer.set_weights_arrays(self.weights_h1, self.weights_h2, self.weights_out)
         
-    def forwardPass(
-        self, 
-        X: np.ndarray
-    ) -> np.ndarray:
+    def forwardPass(self, X):
         """ Forward pass of MLP """
 
-        predictions = np.array([])
+        self.X = X
 
-        for x in X:
-            A_h1 = sigmoid(x @ self.weights_h1)
-            # A_h2 = sigmoid(A_h2 @ self.weights_h2)
-            y_hat = sigmoid(A_h1 @ self.weights_out)
-            predictions = np.append(predictions, np.array(y_hat))
+        self.z_h1 = np.dot(self.X, self.weights_h1)
+        self.a_h1 = self.activation.apply(self.z_h1)
 
-        predictions = predictions.reshape(predictions.shape[0],-1)
+        self.z_h2 = np.dot(self.a_h1, self.weights_h2)
+        self.a_h2 = self.activation.apply(self.z_h2)
 
-        return predictions
+        self.z_out = np.dot(self.a_h2, self.weights_out)
+        self.y_hat = self.activation.apply(self.z_out)
 
-    def backwardPass(
-            self, 
-            Xs: np.ndarray[np.ndarray], 
-            ys: np.ndarray[float], 
-        ) -> list[tuple[np.ndarray, np.ndarray]]:
+    def backwardPass(self, y):
         """ Backward pass of MLP """
 
-        sample_changes = []
+        out_error = y - self.y_hat
+        out_dz = out_error * self.activation.apply_derivative(self.z_out)
 
-        for (x, y) in zip(Xs, ys):
-            z_h1 = x @ self.weights_h1
-            A_h1 = sigmoid(z_h1)
-            # A_h2 = sigmoid(A_h2 @ self.weights_h2)
-            z_out = A_h1 @ self.weights_out
-            y_hat = sigmoid(z_out)
+        h2_error = out_dz.dot(self.weights_out.T)
+        h2_dz = h2_error * self.activation.apply_derivative(self.z_h2)
 
-            # Calculate gradient for output layer
-            dW_out = np.array([])
-            for weight_i in range(self.weights_out.shape[0]):
-                delta = (y_hat - y) * (sigmoid(z_out[0]) * (1 - sigmoid(z_out[0]))) * A_h1[weight_i]
-                dW_out = np.append(dW_out, delta)
+        h1_error = h2_dz.dot(self.weights_h2.T)
+        h1_dz = h1_error * self.activation.apply_derivative(self.z_h1)
 
-            # Calculate gradient for hidden layer
-            dWs_h1 = []
-            for node_i in range(self.weights_h1.shape[1]):
-                dW = np.array([])
-                for weight_i in range(self.weights_h1.shape[0]):
-                    delta_a = (y_hat - y) * (sigmoid(z_out[0]) * (1 - sigmoid(z_out[0]))) * self.weights_out[node_i]
-                    delta_z = delta_a * (sigmoid(z_h1[node_i]) * (1 - sigmoid(z_h1[node_i])))
-                    delta = delta_z.mean() * x[weight_i]
-                    dW = np.append(dW, delta)
-                dWs_h1.append(dW)
+        self.out_dw = self.a_h2.T @ out_dz
+        self.h2_dw = self.a_h1.T @ h2_dz
+        self.h1_dw = self.X.T @ h1_dz
 
-            sample_changes.append((dWs_h1, dW_out))
-
-        return sample_changes
-    
-
-
-    def update(self, gradients: list[tuple[np.ndarray, np.ndarray]]):
+    def update(self):
         """ The update method to update parameters """
 
-        sample_count = len(gradients)
-
-        learning_rate = 1.0
-        momentum = 0.3
-
-        for (gradients_h1, gradients_out) in gradients:
-            for node_i in range(len(gradients_h1)):
-                for weight_i in range(len(gradients_h1[node_i])):
-                    delta = gradients_h1[node_i][weight_i] / sample_count
-                    delta = momentum * self.prev_dW_h1[weight_i][node_i] + learning_rate * -delta
-                    self.weights_h1[weight_i][node_i] += delta
-                    self.prev_dW_h1[weight_i][node_i] = delta
-
-            for weight_i in range(len(self.weights_out)):
-                delta = gradients_out[weight_i]  / sample_count
-                delta = momentum * self.prev_dW_out[weight_i] + learning_rate * -delta
-                self.weights_out[weight_i] += delta
-                self.prev_dW_out[weight_i] = delta
-
-    def fit(
-        self, 
-        X_train: np.ndarray, 
-        y_train: np.ndarray
-    ):
+        self.optimizer.update(self.h1_dw, self.h2_dw, self.out_dw)
+    
+    def fit(self, X_train, y_train):
         """ Fit method for MLP, call it to train your MLP model """
-        y_hats = self.forwardPass(X_train)
-        error_before = meanSquareError(y_hats, y_train)
-        print(f"Error before: {error_before}")
 
-        for epoch in range(self.n_epoch):
+        for i in range(self.n_epoch):
             sample_indices = np.random.choice(range(0, len(X_train)), size = 10)
-            # sample_indices = [i for i in range(10)]
+
             X = np.array([X_train[i] for i in sample_indices])
-            y = np.array([float(y_train[i]) for i in sample_indices])
+            y = np.array([y_train[i] for i in sample_indices])
 
-            gradients = self.backwardPass(X, y)
-            self.update(gradients)
+            self.forwardPass(X)
+            self.backwardPass(y)
+            self.update()
 
-            if epoch % 30 == 0:
-                y_hats = self.forwardPass(X_train)
-                loss = meanSquareError(y_hats, y_train)
-                print(f"y_hat {y_hats}, y: {y_train}")
-                print(f"Epoch {epoch}, Loss: {loss}")
-
-        sample_indices = np.random.choice(range(0, len(X_train)), size = 10)
-        # sample_indices = [i for i in range(10)]
-        X = np.array([X_train[i] for i in sample_indices])
-        y = np.array([float(y_train[i]) for i in sample_indices])
-
-        y_hats = self.forwardPass(X)
-        print(y_hats)
-        print(y)
-        error_after = meanSquareError(y_hats, y)
-        print(f"Error after: {error_after}")
-        print(f"difference: {error_after - error_before}")
+            if i % 300 == 0:
+                print(f"Loss: {(y - self.y_hat ** 2).mean()}")
+                # for (y, y_hat) in zip(y, self.y_hat):
+                #     print(f"\ty: {y}, y_hat: {y_hat}")
 
     def predict(self, X_test):
         """ Method for predicting class of the testing data """
@@ -182,7 +155,8 @@ class MLPClassifier(Classifier):
     
     def predict_proba(self, X_test):
         """ Method for predicting the probability of the testing data """
-        return self.forwardPass(X_test)
+        self.forwardPass(X_test)
+        return self.y_hat
 
 
     
